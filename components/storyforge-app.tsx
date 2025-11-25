@@ -23,10 +23,10 @@ interface Video {
   videoUrl: string
   thumbnailUrl: string
   duration: string
+  script: string
 }
 
-// TODO: Replace with your actual n8n webhook URL
-const N8N_WEBHOOK_URL = "YOUR_N8N_WEBHOOK_URL_HERE"
+const N8N_WEBHOOK_URL = "https://bharat77.app.n8n.cloud/webhook-test/storyforge-generate"
 
 // Mock data for testing
 const MOCK_VIDEOS: Video[] = [
@@ -37,6 +37,8 @@ const MOCK_VIDEOS: Video[] = [
     videoUrl: "https://via.placeholder.com/1080x1920.mp4",
     thumbnailUrl: "https://via.placeholder.com/1080x1920/6366F1/FFFFFF?text=Pain+Point",
     duration: "15s",
+    script:
+      "Are you struggling to land AI product management roles? You're not alone. The AI revolution is moving fast, and traditional PM skills aren't enough anymore. But here's the thing - you don't need a PhD to succeed. What you need is the right framework, and that's exactly what we're offering. Transform your career in just 48 hours.",
   },
   {
     id: 2,
@@ -45,6 +47,8 @@ const MOCK_VIDEOS: Video[] = [
     videoUrl: "https://via.placeholder.com/1080x1920.mp4",
     thumbnailUrl: "https://via.placeholder.com/1080x1920/8B5CF6/FFFFFF?text=Transformation",
     duration: "15s",
+    script:
+      "Six months ago, I had no idea how to talk about AI in product meetings. Today, I'm leading AI initiatives at a Fortune 500 company. The difference? I stopped trying to learn everything and focused on what actually matters. This course distills years of experience into practical, actionable frameworks you can use immediately. No fluff, just results.",
   },
   {
     id: 3,
@@ -53,6 +57,8 @@ const MOCK_VIDEOS: Video[] = [
     videoUrl: "https://via.placeholder.com/1080x1920.mp4",
     thumbnailUrl: "https://via.placeholder.com/1080x1920/EC4899/FFFFFF?text=Social+Proof",
     duration: "15s",
+    script:
+      "Over 10,000 product managers have already transformed their careers with this program. From Google to startups, our alumni are leading AI products that are changing the world. 92% report landing their dream role within 6 months. Join the community that's defining the future of AI product management. Your success story starts here.",
   },
   {
     id: 4,
@@ -61,6 +67,8 @@ const MOCK_VIDEOS: Video[] = [
     videoUrl: "https://via.placeholder.com/1080x1920.mp4",
     thumbnailUrl: "https://via.placeholder.com/1080x1920/6366F1/FFFFFF?text=Quick+Win",
     duration: "15s",
+    script:
+      "What if you could master AI prompting in just one weekend? That's not hype - it's our proven 48-hour intensive. You'll learn the exact frameworks that top companies use to build AI products. By Sunday evening, you'll have hands-on experience with GPT-4, Claude, and practical tools you can use Monday morning. Fast results, lasting impact.",
   },
   {
     id: 5,
@@ -69,6 +77,8 @@ const MOCK_VIDEOS: Video[] = [
     videoUrl: "https://via.placeholder.com/1080x1920.mp4",
     thumbnailUrl: "https://via.placeholder.com/1080x1920/8B5CF6/FFFFFF?text=Curiosity+Gap",
     duration: "15s",
+    script:
+      "There's a secret that separates average AI PMs from the ones getting promoted. It's not technical skills. It's not coding. It's something much simpler, but powerful. Top companies like OpenAI and Anthropic know this, and now you will too. This one shift in thinking will change everything about how you approach AI products. Ready to discover it?",
   },
 ]
 
@@ -120,6 +130,14 @@ export default function StoryForgeApp() {
       return
     }
 
+    const totalImages = uploadedImages.length + imageFiles.length
+    if (totalImages > 8) {
+      setValidationError("You can only upload up to 8 images total")
+      return
+    }
+
+    setValidationError("")
+
     imageFiles.forEach((file) => {
       if (file.size > 10 * 1024 * 1024) {
         setValidationError(`${file.name} is too large. Maximum 10MB per file.`)
@@ -141,51 +159,92 @@ export default function StoryForgeApp() {
   }
 
   const isFormValid = () => {
-    return (
-      uploadedImages.length >= 5 &&
-      uploadedImages.length <= 8 &&
-      formData.courseName.trim() !== "" &&
-      formData.description.trim().length >= 200 &&
-      formData.brandTone !== ""
-    )
+    const isImagesValid = uploadedImages.length >= 5 && uploadedImages.length <= 8
+    const isCourseNameValid = formData.courseName.trim().length >= 3
+    const isDescriptionValid = formData.description.trim().length >= 50
+    const isToneValid = ["educational", "inspiring", "relatable"].includes(formData.brandTone.toLowerCase())
+
+    return isImagesValid && isCourseNameValid && isDescriptionValid && isToneValid
   }
 
   const handleGenerate = async () => {
-    if (!isFormValid()) {
-      setValidationError("Please complete all required fields")
+    // Validate all fields
+    if (uploadedImages.length < 5 || uploadedImages.length > 8) {
+      setValidationError("Please upload 5-8 images")
       return
     }
 
+    if (formData.courseName.trim().length < 3) {
+      setValidationError("Course name must be at least 3 characters")
+      return
+    }
+
+    if (formData.description.trim().length < 50) {
+      setValidationError("Description must be at least 50 characters")
+      return
+    }
+
+    if (!["educational", "inspiring", "relatable"].includes(formData.brandTone.toLowerCase())) {
+      setValidationError("Please select a valid brand tone")
+      return
+    }
+
+    // Clear errors and move to processing screen
     setValidationError("")
     setScreen("processing")
 
-    // TODO: Replace this mock delay with actual API call
-    // Uncomment below to use real n8n webhook:
-    /*
     try {
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          images: uploadedImages,
-          ...formData
-        })
-      })
-      const data = await response.json()
-      setVideos(data.videos)
-      setScreen('results')
-    } catch (error) {
-      console.error('Error:', error)
-      setValidationError('Failed to generate videos. Please try again.')
-      setScreen('upload')
-    }
-    */
+      // Prepare payload with base64 images
+      const payload = {
+        courseName: formData.courseName,
+        description: formData.description,
+        brandTone: formData.brandTone,
+        brandColor: formData.brandColor,
+        images: uploadedImages.map((img) => img.data),
+      }
 
-    // Mock delay for demonstration
-    setTimeout(() => {
-      setVideos(MOCK_VIDEOS)
-      setScreen("results")
-    }, 3000)
+      // Debug logging
+      console.log("🚀 Calling n8n:", N8N_WEBHOOK_URL)
+      console.log("📦 Payload:", payload)
+
+      // Call n8n webhook
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log("✅ Response:", data)
+
+      // Handle response
+      if (data.status === "error") {
+        setValidationError(data.message || "An error occurred while generating videos")
+        setScreen("upload")
+        alert(`Error: ${data.message || "Failed to generate videos"}`)
+        return
+      }
+
+      if (data.status === "success" && data.videos) {
+        setVideos(data.videos)
+        setScreen("results")
+      } else {
+        throw new Error("Invalid response format")
+      }
+    } catch (error) {
+      console.error("Error generating videos:", error)
+      const errorMessage =
+        error instanceof Error ? error.message : "Network error. Please check your connection and try again."
+      setValidationError(errorMessage)
+      setScreen("upload")
+      alert(`Failed to generate videos: ${errorMessage}`)
+    }
   }
 
   const handleDownloadAll = () => {
@@ -209,7 +268,7 @@ export default function StoryForgeApp() {
   }
 
   const charCount = formData.description.length
-  const isCharCountValid = charCount >= 200
+  const isCharCountValid = charCount >= 50
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 py-8 px-4">
@@ -228,7 +287,9 @@ export default function StoryForgeApp() {
           <Card className="p-8 mb-6">
             {/* Image Upload Section */}
             <div className="mb-8">
-              <label className="block text-gray-700 font-semibold mb-3 text-lg">Upload Images (5-8 required)</label>
+              <label className="block text-gray-700 font-semibold mb-3 text-lg">
+                Upload Images (5-8 required) <span className="text-red-500">*</span>
+              </label>
 
               {/* Upload Drop Zone */}
               <div
@@ -294,10 +355,14 @@ export default function StoryForgeApp() {
                 className={`text-sm mt-2 ${
                   uploadedImages.length >= 5 && uploadedImages.length <= 8
                     ? "text-green-600 font-semibold"
-                    : "text-gray-500"
+                    : uploadedImages.length > 0
+                      ? "text-orange-600 font-semibold"
+                      : "text-gray-500"
                 }`}
               >
                 {uploadedImages.length} image{uploadedImages.length !== 1 ? "s" : ""} uploaded
+                {uploadedImages.length > 0 && uploadedImages.length < 5 && " (need at least 5)"}
+                {uploadedImages.length > 8 && " (maximum 8 allowed)"}
               </p>
             </div>
 
@@ -316,32 +381,34 @@ export default function StoryForgeApp() {
                   value={formData.courseName}
                   onChange={(e) => setFormData({ ...formData, courseName: e.target.value })}
                   required
+                  minLength={3}
                 />
+                {formData.courseName.length > 0 && formData.courseName.length < 3 && (
+                  <p className="text-orange-600 text-sm mt-1">Must be at least 3 characters</p>
+                )}
               </div>
 
               {/* Description */}
               <div>
                 <label htmlFor="courseDescription" className="block text-gray-700 font-semibold mb-2">
                   Description <span className="text-red-500">*</span>
+                  <span
+                    className={`text-sm ml-2 ${
+                      isCharCountValid ? "text-green-600" : charCount > 0 ? "text-orange-600" : "text-gray-500"
+                    }`}
+                  >
+                    ({charCount}/50 characters minimum)
+                  </span>
                 </label>
                 <textarea
                   id="courseDescription"
                   rows={4}
                   placeholder="Describe your course, target audience, and key benefits..."
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors resize-none"
-                  maxLength={500}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   required
                 />
-                <div className="flex justify-between mt-1">
-                  <p className={`text-sm ${isCharCountValid ? "text-gray-500" : "text-red-500"}`}>
-                    {charCount} / 500 characters (min 200)
-                  </p>
-                  {!isCharCountValid && charCount > 0 && (
-                    <p className="text-sm text-red-500">Minimum 200 characters required</p>
-                  )}
-                </div>
               </div>
 
               {/* Brand Tone */}
@@ -388,7 +455,12 @@ export default function StoryForgeApp() {
             >
               Generate 5 Videos
             </Button>
-            {validationError && <p className="text-red-500 text-sm mt-2 text-center">{validationError}</p>}
+            {validationError && (
+              <p className="text-red-500 text-sm mt-2 text-center font-semibold">{validationError}</p>
+            )}
+            {!isFormValid() && (
+              <p className="text-gray-500 text-sm mt-2 text-center">Complete all required fields to generate videos</p>
+            )}
           </Card>
 
           {/* Info Footer */}
@@ -481,43 +553,42 @@ export default function StoryForgeApp() {
           {/* Video Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {videos.map((video) => (
-              <Card key={video.id} className="overflow-hidden hover:shadow-xl transition-shadow">
-                {/* Video Thumbnail */}
-                <div className="relative aspect-[9/16] bg-gradient-to-br from-indigo-100 to-purple-100">
-                  <img
-                    src={video.thumbnailUrl || "/placeholder.svg"}
-                    alt={video.hookTitle}
+              <Card key={video.id} className="overflow-hidden hover:shadow-xl transition-shadow duration-300">
+                {/* Video Preview */}
+                <div className="relative bg-gray-900 aspect-[9/16]">
+                  <video
+                    src={video.videoUrl}
+                    poster={video.thumbnailUrl}
+                    controls
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute top-3 right-3 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                  <div className="absolute top-3 right-3 bg-black/70 text-white px-2 py-1 rounded text-xs font-semibold">
                     {video.duration}
                   </div>
                 </div>
 
-                {/* Video Info */}
-                <div className="p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-2 py-1 rounded">
+                {/* Video Details */}
+                <div className="p-5">
+                  <div className="mb-3">
+                    <span className="inline-block bg-indigo-100 text-indigo-700 text-xs font-semibold px-3 py-1 rounded-full">
                       {video.hookType}
                     </span>
                   </div>
-                  <h3 className="font-bold text-gray-800 mb-3 leading-tight">{video.hookTitle}</h3>
+                  <h3 className="text-lg font-bold text-gray-800 mb-3">{video.hookTitle}</h3>
 
-                  {/* Action Buttons */}
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => handleDownload(video.videoUrl, video.hookType)}
-                      className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg transition-colors"
-                    >
-                      Download
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="flex-1 border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50 py-2 rounded-lg transition-colors bg-transparent"
-                    >
-                      Preview
-                    </Button>
-                  </div>
+                  {video.script && (
+                    <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-xs font-semibold text-gray-600 mb-1">Script:</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{video.script}</p>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={() => handleDownload(video.videoUrl, video.hookType)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg transition-colors"
+                  >
+                    Download
+                  </Button>
                 </div>
               </Card>
             ))}
