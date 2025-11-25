@@ -87,7 +87,7 @@ export default function StoryForgeApp() {
   const [formData, setFormData] = useState<FormData>({
     courseName: "",
     description: "",
-    brandTone: "",
+    brandTone: "educational", // Default to "educational" instead of empty string
     brandColor: "#6366F1",
   })
   const [screen, setScreen] = useState<"upload" | "processing" | "results">("upload")
@@ -257,7 +257,7 @@ export default function StoryForgeApp() {
     setFormData({
       courseName: "",
       description: "",
-      brandTone: "",
+      brandTone: "educational", // Default to "educational" instead of empty string
       brandColor: "#6366F1",
     })
     setVideos([])
