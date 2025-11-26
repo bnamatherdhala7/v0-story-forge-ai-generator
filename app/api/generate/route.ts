@@ -8,28 +8,61 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] 🚀 Proxying request to n8n:", N8N_WEBHOOK_URL)
     console.log("[v0] 📦 Received body keys:", Object.keys(body))
-    console.log("[v0] 📦 Images received:", body.images ? `Array of ${body.images.length} items` : "MISSING")
-    console.log("[v0] 📦 Images type:", Array.isArray(body.images) ? "Array" : typeof body.images)
 
-    // Validate images exist
-    if (!body.images || !Array.isArray(body.images) || body.images.length === 0) {
-      console.error("[v0] ❌ Images missing or invalid in request body")
+    console.log("[v0] 📦 courseName:", body.courseName)
+    console.log("[v0] 📦 description:", body.description)
+    console.log("[v0] 📦 description length:", body.description?.length)
+    console.log("[v0] 📦 brandTone:", body.brandTone)
+    console.log("[v0] 📦 brandColor:", body.brandColor)
+    console.log("[v0] 📦 images type:", Array.isArray(body.images) ? "Array" : typeof body.images)
+    console.log("[v0] 📦 images count:", body.images?.length)
+    console.log("[v0] 📦 first image starts with:", body.images?.[0]?.substring(0, 30))
+
+    // Validate required fields
+    if (!body.courseName || body.courseName.trim().length < 3) {
       return NextResponse.json(
         {
           status: "error",
-          message: "Images array is required",
+          message: "Course name is required (minimum 3 characters)",
         },
         { status: 400 },
       )
     }
 
-    console.log("[v0] 📦 Full payload structure:", {
-      courseName: body.courseName,
-      description: body.description?.substring(0, 50) + "...",
-      brandTone: body.brandTone,
-      brandColor: body.brandColor,
-      imagesCount: body.images.length,
-      firstImagePreview: body.images[0]?.substring(0, 50) + "...",
+    if (!body.description || body.description.trim().length < 50) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: `Description is required (minimum 50 characters, got ${body.description?.length || 0})`,
+        },
+        { status: 400 },
+      )
+    }
+
+    if (!body.images || !Array.isArray(body.images) || body.images.length < 5 || body.images.length > 8) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: `Images array must contain 5-8 items (got ${body.images?.length || 0})`,
+        },
+        { status: 400 },
+      )
+    }
+
+    const payload = {
+      courseName: body.courseName.trim(),
+      description: body.description.trim(),
+      brandTone: body.brandTone.toLowerCase(),
+      brandColor: body.brandColor || "#6366F1",
+      images: body.images,
+    }
+
+    console.log("[v0] 📤 Sending to n8n - payload preview:", {
+      courseName: payload.courseName,
+      descriptionLength: payload.description.length,
+      brandTone: payload.brandTone,
+      brandColor: payload.brandColor,
+      imagesCount: payload.images.length,
     })
 
     const controller = new AbortController()
@@ -42,7 +75,7 @@ export async function POST(request: NextRequest) {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       })
 
@@ -50,20 +83,29 @@ export async function POST(request: NextRequest) {
 
       console.log("[v0] 📡 n8n Response status:", response.status, response.statusText)
 
+      const responseText = await response.text()
+      console.log("[v0] 📡 n8n Response raw:", responseText)
+
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error")
-        console.error("[v0] ❌ n8n error:", errorText)
+        console.error("[v0] ❌ n8n error response:", responseText)
         return NextResponse.json(
           {
             status: "error",
-            message: `Webhook error: ${response.status} - ${errorText}`,
+            message: `Webhook error: ${response.status} - ${responseText}`,
           },
           { status: response.status },
         )
       }
 
-      const data = await response.json()
-      console.log("[v0] ✅ n8n Response:", data)
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error("[v0] ❌ Failed to parse n8n response as JSON:", parseError)
+        data = { status: "error", message: responseText }
+      }
+
+      console.log("[v0] ✅ n8n Response parsed:", data)
 
       return NextResponse.json(data)
     } catch (fetchError) {
