@@ -3,6 +3,7 @@
 import { useState, type ChangeEvent, type DragEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { submitToAPI } from "@/lib/api"
 
 interface UploadedImage {
   name: string
@@ -82,17 +83,19 @@ const MOCK_VIDEOS: Video[] = [
   },
 ]
 
-export default function StoryForgeApp() {
+function StoryforgeApp() {
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
   const [formData, setFormData] = useState<FormData>({
     courseName: "",
     description: "",
-    brandTone: "educational", // Default to "educational" instead of empty string
+    brandTone: "educational",
     brandColor: "#6366F1",
   })
   const [screen, setScreen] = useState<"upload" | "processing" | "results">("upload")
   const [videos, setVideos] = useState<Video[]>([])
   const [validationError, setValidationError] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
 
   const handleDrag = (e: DragEvent<HTMLDivElement>) => {
@@ -168,6 +171,9 @@ export default function StoryForgeApp() {
   }
 
   const handleGenerate = async () => {
+    console.log("[v0] 🎯 Generate button clicked")
+    console.log("[v0] 📸 Uploaded images count:", uploadedImages.length)
+
     // Validate all fields
     if (uploadedImages.length < 5 || uploadedImages.length > 8) {
       setValidationError("Please upload 5-8 images")
@@ -189,61 +195,47 @@ export default function StoryForgeApp() {
       return
     }
 
+    console.log("[v0] ✅ All validations passed")
+
     // Clear errors and move to processing screen
     setValidationError("")
+    setErrorMessage("")
+    setIsLoading(true)
     setScreen("processing")
 
-    try {
-      // Prepare payload with base64 images
-      const payload = {
-        courseName: formData.courseName,
-        description: formData.description,
-        brandTone: formData.brandTone,
-        brandColor: formData.brandColor,
-        images: uploadedImages.map((img) => img.data),
-      }
+    // Prepare payload with base64 images
+    const payload = {
+      courseName: formData.courseName,
+      description: formData.description,
+      brandTone: formData.brandTone,
+      brandColor: formData.brandColor,
+      images: uploadedImages.map((img) => img.data),
+    }
 
-      // Debug logging
-      console.log("🚀 Calling n8n:", N8N_WEBHOOK_URL)
-      console.log("📦 Payload:", payload)
+    console.log("[v0] 📦 Payload prepared:")
+    console.log("[v0]   - courseName:", payload.courseName)
+    console.log("[v0]   - description length:", payload.description.length)
+    console.log("[v0]   - brandTone:", payload.brandTone)
+    console.log("[v0]   - brandColor:", payload.brandColor)
+    console.log("[v0]   - images count:", payload.images.length)
+    console.log("[v0]   - first image preview:", payload.images[0]?.substring(0, 100) + "...")
 
-      // Call n8n webhook
-      const response = await fetch(N8N_WEBHOOK_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
+    const result = await submitToAPI(payload)
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
+    console.log("[v0] 🔄 API result:", result.success ? "SUCCESS" : "FAILED")
+    if (!result.success) {
+      console.log("[v0] ❌ Error details:", result.error)
+    }
 
-      const data = await response.json()
-      console.log("✅ Response:", data)
-
-      // Handle response
-      if (data.status === "error") {
-        setValidationError(data.message || "An error occurred while generating videos")
-        setScreen("upload")
-        alert(`Error: ${data.message || "Failed to generate videos"}`)
-        return
-      }
-
-      if (data.status === "success" && data.videos) {
-        setVideos(data.videos)
-        setScreen("results")
-      } else {
-        throw new Error("Invalid response format")
-      }
-    } catch (error) {
-      console.error("Error generating videos:", error)
-      const errorMessage =
-        error instanceof Error ? error.message : "Network error. Please check your connection and try again."
-      setValidationError(errorMessage)
+    if (result.success && result.data) {
+      console.log("[v0] 🎬 Videos received:", result.data.videos?.length)
+      setVideos(result.data.videos)
+      setScreen("results")
+      setIsLoading(false)
+    } else {
+      setIsLoading(false)
+      setErrorMessage(result.error || "An unexpected error occurred")
       setScreen("upload")
-      alert(`Failed to generate videos: ${errorMessage}`)
     }
   }
 
@@ -257,7 +249,7 @@ export default function StoryForgeApp() {
     setFormData({
       courseName: "",
       description: "",
-      brandTone: "educational", // Default to "educational" instead of empty string
+      brandTone: "educational",
       brandColor: "#6366F1",
     })
     setVideos([])
@@ -267,14 +259,25 @@ export default function StoryForgeApp() {
     alert(`Download video: ${hookType}`)
   }
 
+  const handleCancel = () => {
+    setIsLoading(false)
+    setScreen("upload")
+  }
+
+  const handleRetry = () => {
+    setErrorMessage("")
+    setValidationError("")
+    handleGenerate()
+  }
+
   const charCount = formData.description.length
   const isCharCountValid = charCount >= 50
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 py-8 px-4">
-      {/* SCREEN 1: Upload & Setup */}
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6">
+      {/* SCREEN 1: Upload */}
       {screen === "upload" && (
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto space-y-8">
           {/* Header */}
           <div className="text-center mb-12 animate-in fade-in duration-500">
             <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-3">
@@ -284,7 +287,33 @@ export default function StoryForgeApp() {
           </div>
 
           {/* Main Form Card */}
-          <Card className="p-8 mb-6">
+          <Card className="p-8 shadow-xl">
+            {errorMessage && (
+              <div className="mb-6 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <svg className="h-6 w-6 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <div className="flex-1">
+                    <h3 className="text-red-800 font-semibold mb-1">Error</h3>
+                    <p className="text-red-700 text-sm whitespace-pre-line">{errorMessage}</p>
+                    <button
+                      onClick={handleRetry}
+                      className="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold text-sm"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Setup Your Video Generation</h2>
+
             {/* Image Upload Section */}
             <div className="mb-8">
               <label className="block text-gray-700 font-semibold mb-3 text-lg">
@@ -370,16 +399,17 @@ export default function StoryForgeApp() {
             <div className="space-y-6">
               {/* Course Name */}
               <div>
-                <label htmlFor="courseName" className="block text-gray-700 font-semibold mb-2">
+                <label htmlFor="courseName" className="block text-sm font-semibold text-gray-700 mb-2">
                   Course/Product Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   id="courseName"
                   placeholder="e.g., AI Product Management Masterclass"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.courseName}
                   onChange={(e) => setFormData({ ...formData, courseName: e.target.value })}
+                  disabled={isLoading}
                   required
                   minLength={3}
                 />
@@ -390,7 +420,7 @@ export default function StoryForgeApp() {
 
               {/* Description */}
               <div>
-                <label htmlFor="courseDescription" className="block text-gray-700 font-semibold mb-2">
+                <label htmlFor="courseDescription" className="block text-sm font-semibold text-gray-700 mb-2">
                   Description <span className="text-red-500">*</span>
                   <span
                     className={`text-sm ml-2 ${
@@ -404,25 +434,26 @@ export default function StoryForgeApp() {
                   id="courseDescription"
                   rows={4}
                   placeholder="Describe your course, target audience, and key benefits..."
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors resize-none"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all min-h-[120px] disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  disabled={isLoading}
                   required
                 />
               </div>
 
               {/* Brand Tone */}
               <div>
-                <label htmlFor="brandTone" className="block text-gray-700 font-semibold mb-2">
+                <label htmlFor="brandTone" className="block text-sm font-semibold text-gray-700 mb-2">
                   Brand Tone <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="brandTone"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors bg-white"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.brandTone}
                   onChange={(e) => setFormData({ ...formData, brandTone: e.target.value })}
+                  disabled={isLoading}
                 >
-                  <option value="">Select a tone...</option>
                   <option value="educational">Educational</option>
                   <option value="inspiring">Inspiring</option>
                   <option value="relatable">Relatable</option>
@@ -431,7 +462,7 @@ export default function StoryForgeApp() {
 
               {/* Brand Color */}
               <div>
-                <label htmlFor="brandColor" className="block text-gray-700 font-semibold mb-2">
+                <label htmlFor="brandColor" className="block text-sm font-semibold text-gray-700 mb-2">
                   Brand Color
                 </label>
                 <div className="flex items-center gap-4">
@@ -440,7 +471,8 @@ export default function StoryForgeApp() {
                     id="brandColor"
                     value={formData.brandColor}
                     onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
-                    className="h-12 w-20 border-2 border-gray-200 rounded-lg cursor-pointer"
+                    disabled={isLoading}
+                    className="w-full h-[50px] border-2 border-gray-200 rounded-xl cursor-pointer disabled:cursor-not-allowed"
                   />
                   <span className="text-gray-600 font-mono">{formData.brandColor}</span>
                 </div>
@@ -450,15 +482,20 @@ export default function StoryForgeApp() {
             {/* Generate Button */}
             <Button
               onClick={handleGenerate}
-              disabled={!isFormValid()}
-              className="w-full mt-8 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              disabled={!isFormValid() || isLoading}
+              className={`w-full mt-6 py-4 text-lg font-bold rounded-xl shadow-lg transition-all duration-200 ${
+                isFormValid() && !isLoading
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-xl hover:scale-[1.02] cursor-pointer"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
+              }`}
             >
-              Generate 5 Videos
+              {isLoading ? "Processing..." : "Generate 5 Videos"}
             </Button>
+
             {validationError && (
               <p className="text-red-500 text-sm mt-2 text-center font-semibold">{validationError}</p>
             )}
-            {!isFormValid() && (
+            {!isFormValid() && !isLoading && (
               <p className="text-gray-500 text-sm mt-2 text-center">Complete all required fields to generate videos</p>
             )}
           </Card>
@@ -510,9 +547,13 @@ export default function StoryForgeApp() {
               </div>
             </div>
 
-            <p className="text-gray-500">
-              Estimated time: <span className="font-semibold">~3-5 minutes</span>
-            </p>
+            <Button
+              onClick={handleCancel}
+              variant="outline"
+              className="mt-6 px-6 py-2 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors bg-transparent"
+            >
+              Cancel
+            </Button>
           </Card>
         </div>
       )}
@@ -536,14 +577,14 @@ export default function StoryForgeApp() {
             <div className="flex flex-wrap justify-center gap-4 mb-8">
               <Button
                 onClick={handleDownloadAll}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
               >
                 Download All (ZIP)
               </Button>
               <Button
                 onClick={handleGenerateNew}
                 variant="outline"
-                className="px-6 py-3 bg-white text-indigo-600 font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-105 transition-all duration-200 border-2 border-indigo-200"
+                className="px-6 py-3 bg-white text-indigo-600 font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-2 border-indigo-200"
               >
                 Generate New
               </Button>
@@ -598,3 +639,5 @@ export default function StoryForgeApp() {
     </div>
   )
 }
+
+export default StoryforgeApp
