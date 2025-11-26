@@ -84,7 +84,7 @@ const MOCK_VIDEOS: Video[] = [
 ]
 
 function StoryforgeApp() {
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
+  const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [formData, setFormData] = useState<FormData>({
     courseName: "",
     description: "",
@@ -150,7 +150,7 @@ function StoryforgeApp() {
       const reader = new FileReader()
       reader.onload = (e) => {
         if (e.target?.result) {
-          setUploadedImages((prev) => [...prev, { name: file.name, data: e.target!.result as string }])
+          setUploadedImages((prev) => [...prev, e.target!.result as string])
         }
       }
       reader.readAsDataURL(file)
@@ -173,6 +173,7 @@ function StoryforgeApp() {
   const handleGenerate = async () => {
     console.log("[v0] 🎯 Generate button clicked")
     console.log("[v0] 📸 Uploaded images count:", uploadedImages.length)
+    console.log("[v0] 📸 First image preview:", uploadedImages[0]?.substring(0, 50))
 
     // Validate all fields
     if (uploadedImages.length < 5 || uploadedImages.length > 8) {
@@ -203,22 +204,37 @@ function StoryforgeApp() {
     setIsLoading(true)
     setScreen("processing")
 
-    // Prepare payload with base64 images
+    console.log("[v0] 🎬 Generate button clicked!")
+    console.log("[v0] 📊 Form State:")
+    console.log("[v0]   courseName:", formData.courseName)
+    console.log("[v0]   description:", formData.description)
+    console.log("[v0]   brandTone:", formData.brandTone)
+    console.log("[v0]   brandColor:", formData.brandColor)
+    console.log("[v0]   uploadedImages count:", uploadedImages.length)
+
+    console.log("[v0] 🖼️  Images Array Details:")
+    console.log("[v0]   Array.isArray(uploadedImages):", Array.isArray(uploadedImages))
+    console.log("[v0]   uploadedImages.length:", uploadedImages.length)
+    uploadedImages.forEach((img, index) => {
+      console.log(`[v0]   Image ${index}:`, {
+        dataType: typeof img,
+        dataLength: img.length,
+        dataStart: img.substring(0, 50),
+      })
+    })
+
     const payload = {
       courseName: formData.courseName,
       description: formData.description,
       brandTone: formData.brandTone,
       brandColor: formData.brandColor,
-      images: uploadedImages.map((img) => img.data),
+      images: uploadedImages, // Already an array of base64 strings
     }
 
-    console.log("[v0] 📦 Payload prepared:")
-    console.log("[v0]   - courseName:", payload.courseName)
-    console.log("[v0]   - description length:", payload.description.length)
-    console.log("[v0]   - brandTone:", payload.brandTone)
-    console.log("[v0]   - brandColor:", payload.brandColor)
-    console.log("[v0]   - images count:", payload.images.length)
-    console.log("[v0]   - first image preview:", payload.images[0]?.substring(0, 100) + "...")
+    console.log("[v0] 📤 Final Payload Structure:")
+    console.log("[v0]   payload.images is Array?:", Array.isArray(payload.images))
+    console.log("[v0]   payload.images.length:", payload.images.length)
+    console.log("[v0]   First image starts with:", payload.images[0]?.substring(0, 30))
 
     const result = await submitToAPI(payload)
 
@@ -362,8 +378,8 @@ function StoryforgeApp() {
                   {uploadedImages.map((img, index) => (
                     <div key={index} className="relative group">
                       <img
-                        src={img.data || "/placeholder.svg"}
-                        alt={img.name}
+                        src={img || "/placeholder.svg"}
+                        alt={`Upload ${index + 1}`}
                         className="w-full h-24 object-cover rounded-lg shadow-md"
                       />
                       <button

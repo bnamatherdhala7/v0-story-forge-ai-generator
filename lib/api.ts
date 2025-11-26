@@ -42,6 +42,18 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 300
 export async function submitToAPI(formData: FormData): Promise<ApiResponse> {
   try {
     console.log("[v0] 🚀 Calling internal API route")
+
+    console.log("[v0] 📦 FormData received in API utility:")
+    console.log("[v0]   Array.isArray(formData.images):", Array.isArray(formData.images))
+    console.log("[v0]   formData.images.length:", formData.images.length)
+    console.log("[v0]   typeof formData.images:", typeof formData.images)
+    console.log("[v0]   Object.keys(formData.images):", Object.keys(formData.images))
+
+    const jsonString = JSON.stringify(formData)
+    console.log("[v0]   JSON string first 200 chars:", jsonString.substring(0, 200))
+    const parsed = JSON.parse(jsonString)
+    console.log("[v0]   Parsed back - Array.isArray(parsed.images):", Array.isArray(parsed.images))
+
     console.log("[v0] 📦 Payload:", {
       courseName: formData.courseName,
       description: formData.description,
