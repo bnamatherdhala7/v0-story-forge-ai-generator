@@ -1,36 +1,14 @@
 "use client"
 
-import { useState, type ChangeEvent, type DragEvent } from "react"
+import { useState, useEffect, type ChangeEvent, type DragEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { submitToAPI } from "@/lib/api"
-
-interface UploadedImage {
-  name: string
-  data: string
-}
-
-interface FormData {
-  courseName: string
-  description: string
-  brandTone: string
-  brandColor: string
-}
-
-interface Video {
-  id: number
-  hookType: string
-  hookTitle: string
-  videoUrl: string
-  thumbnailUrl: string
-  duration: string
-  script: string
-}
+import { Loader2, CheckCircle2 } from "lucide-react"
 
 const N8N_WEBHOOK_URL = "https://bharat77.app.n8n.cloud/webhook-test/storyforge-generate"
 
 // Mock data for testing
-const MOCK_VIDEOS: Video[] = [
+const MOCK_VIDEOS: any[] = [
   {
     id: 1,
     hookType: "Pain Point",
@@ -83,6 +61,36 @@ const MOCK_VIDEOS: Video[] = [
   },
 ]
 
+interface UploadedImage {
+  name: string
+  data: string
+}
+
+interface FormData {
+  courseName: string
+  description: string
+  brandTone: string
+  brandColor: string
+}
+
+interface Video {
+  id: number
+  hookType: string
+  hookTitle: string
+  videoUrl: string
+  thumbnailUrl: string
+  duration: string
+  script: string
+}
+
+interface JobProgress {
+  current: number
+  total: number
+  phase: string
+}
+
+type ProcessingStatus = "idle" | "processing" | "completed" | "error"
+
 function StoryforgeApp() {
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [formData, setFormData] = useState<FormData>({
@@ -95,8 +103,48 @@ function StoryforgeApp() {
   const [videos, setVideos] = useState<Video[]>([])
   const [validationError, setValidationError] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
   const [dragActive, setDragActive] = useState(false)
+
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [processingStatus, setProcessingStatus] = useState<ProcessingStatus>("idle")
+  const [progress, setProgress] = useState<JobProgress>({ current: 0, total: 5, phase: "Initializing..." })
+
+  useEffect(() => {
+    if (!jobId || processingStatus !== "processing") {
+      return
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/status/${jobId}`)
+        const data = await response.json()
+
+        if (data.status === "completed") {
+          setProcessingStatus("completed")
+          setProgress(data.progress)
+          setVideos(data.videos || [])
+          setScreen("results")
+          clearInterval(pollInterval)
+        } else if (data.status === "error") {
+          setProcessingStatus("error")
+          setErrorMessage(data.error || "Video generation failed")
+          setScreen("upload")
+          clearInterval(pollInterval)
+        } else if (data.status === "processing") {
+          setProgress(data.progress)
+        }
+      } catch (error) {
+        console.error("[v0] ❌ Polling error:", error)
+        setProcessingStatus("error")
+        setErrorMessage("Failed to check job status. Please try again.")
+        setScreen("upload")
+        clearInterval(pollInterval)
+      }
+    }, 3000) // Poll every 3 seconds
+
+    // Cleanup on unmount
+    return () => clearInterval(pollInterval)
+  }, [jobId, processingStatus])
 
   const handleDrag = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -201,56 +249,37 @@ function StoryforgeApp() {
     // Clear errors and move to processing screen
     setValidationError("")
     setErrorMessage("")
-    setIsLoading(true)
+    setProcessingStatus("processing")
     setScreen("processing")
+    setProgress({ current: 0, total: 5, phase: "Analyzing your content..." })
 
-    console.log("[v0] 🎬 Generate button clicked!")
-    console.log("[v0] 📊 Form State:")
-    console.log("[v0]   courseName:", formData.courseName)
-    console.log("[v0]   description:", formData.description)
-    console.log("[v0]   brandTone:", formData.brandTone)
-    console.log("[v0]   brandColor:", formData.brandColor)
-    console.log("[v0]   uploadedImages count:", uploadedImages.length)
-
-    console.log("[v0] 🖼️  Images Array Details:")
-    console.log("[v0]   Array.isArray(uploadedImages):", Array.isArray(uploadedImages))
-    console.log("[v0]   uploadedImages.length:", uploadedImages.length)
-    uploadedImages.forEach((img, index) => {
-      console.log(`[v0]   Image ${index}:`, {
-        dataType: typeof img,
-        dataLength: img.length,
-        dataStart: img.substring(0, 50),
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          courseName: formData.courseName,
+          description: formData.description,
+          brandTone: formData.brandTone,
+          brandColor: formData.brandColor,
+          images: uploadedImages, // Already an array of base64 strings
+        }),
       })
-    })
 
-    const payload = {
-      courseName: formData.courseName,
-      description: formData.description,
-      brandTone: formData.brandTone,
-      brandColor: formData.brandColor,
-      images: uploadedImages, // Already an array of base64 strings
-    }
+      const data = await response.json()
 
-    console.log("[v0] 📤 Final Payload Structure:")
-    console.log("[v0]   payload.images is Array?:", Array.isArray(payload.images))
-    console.log("[v0]   payload.images.length:", payload.images.length)
-    console.log("[v0]   First image starts with:", payload.images[0]?.substring(0, 30))
+      if (!response.ok || data.status === "error") {
+        throw new Error(data.message || "Failed to start video generation")
+      }
 
-    const result = await submitToAPI(payload)
-
-    console.log("[v0] 🔄 API result:", result.success ? "SUCCESS" : "FAILED")
-    if (!result.success) {
-      console.log("[v0] ❌ Error details:", result.error)
-    }
-
-    if (result.success && result.data) {
-      console.log("[v0] 🎬 Videos received:", result.data.videos?.length)
-      setVideos(result.data.videos)
-      setScreen("results")
-      setIsLoading(false)
-    } else {
-      setIsLoading(false)
-      setErrorMessage(result.error || "An unexpected error occurred")
+      // Store jobId and start polling
+      setJobId(data.jobId)
+    } catch (error) {
+      console.error("[v0] ❌ Error starting job:", error)
+      setProcessingStatus("error")
+      setErrorMessage(error instanceof Error ? error.message : "Failed to start video generation")
       setScreen("upload")
     }
   }
@@ -269,6 +298,9 @@ function StoryforgeApp() {
       brandColor: "#6366F1",
     })
     setVideos([])
+    setJobId(null)
+    setProcessingStatus("idle")
+    setProgress({ current: 0, total: 5, phase: "Initializing..." })
   }
 
   const handleDownload = (videoUrl: string, hookType: string) => {
@@ -276,18 +308,23 @@ function StoryforgeApp() {
   }
 
   const handleCancel = () => {
-    setIsLoading(false)
+    setProcessingStatus("idle")
+    setJobId(null)
     setScreen("upload")
   }
 
   const handleRetry = () => {
     setErrorMessage("")
     setValidationError("")
+    setProcessingStatus("idle")
+    setJobId(null)
     handleGenerate()
   }
 
   const charCount = formData.description.length
   const isCharCountValid = charCount >= 50
+
+  const progressPercentage = (progress.current / progress.total) * 100
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-6">
@@ -425,7 +462,7 @@ function StoryforgeApp() {
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.courseName}
                   onChange={(e) => setFormData({ ...formData, courseName: e.target.value })}
-                  disabled={isLoading}
+                  disabled={processingStatus === "processing"}
                   required
                   minLength={3}
                 />
@@ -453,7 +490,7 @@ function StoryforgeApp() {
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all min-h-[120px] disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  disabled={isLoading}
+                  disabled={processingStatus === "processing"}
                   required
                 />
               </div>
@@ -468,7 +505,7 @@ function StoryforgeApp() {
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.brandTone}
                   onChange={(e) => setFormData({ ...formData, brandTone: e.target.value })}
-                  disabled={isLoading}
+                  disabled={processingStatus === "processing"}
                 >
                   <option value="educational">Educational</option>
                   <option value="inspiring">Inspiring</option>
@@ -487,7 +524,7 @@ function StoryforgeApp() {
                     id="brandColor"
                     value={formData.brandColor}
                     onChange={(e) => setFormData({ ...formData, brandColor: e.target.value })}
-                    disabled={isLoading}
+                    disabled={processingStatus === "processing"}
                     className="w-full h-[50px] border-2 border-gray-200 rounded-xl cursor-pointer disabled:cursor-not-allowed"
                   />
                   <span className="text-gray-600 font-mono">{formData.brandColor}</span>
@@ -498,20 +535,20 @@ function StoryforgeApp() {
             {/* Generate Button */}
             <Button
               onClick={handleGenerate}
-              disabled={!isFormValid() || isLoading}
+              disabled={!isFormValid() || processingStatus === "processing"}
               className={`w-full mt-6 py-4 text-lg font-bold rounded-xl shadow-lg transition-all duration-200 ${
-                isFormValid() && !isLoading
+                isFormValid() && processingStatus !== "processing"
                   ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-xl hover:scale-[1.02] cursor-pointer"
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
             >
-              {isLoading ? "Processing..." : "Generate 5 Videos"}
+              {processingStatus === "processing" ? "Processing..." : "Generate 5 Videos"}
             </Button>
 
             {validationError && (
               <p className="text-red-500 text-sm mt-2 text-center font-semibold">{validationError}</p>
             )}
-            {!isFormValid() && !isLoading && (
+            {!isFormValid() && processingStatus !== "processing" && (
               <p className="text-gray-500 text-sm mt-2 text-center">Complete all required fields to generate videos</p>
             )}
           </Card>
@@ -525,48 +562,45 @@ function StoryforgeApp() {
         </div>
       )}
 
-      {/* SCREEN 2: Processing */}
+      {/* SCREEN 2: Processing - UPDATED */}
       {screen === "processing" && (
-        <div className="max-w-2xl mx-auto text-center">
-          <Card className="p-12">
-            {/* Spinner */}
-            <div className="flex justify-center mb-8">
-              <div className="h-20 w-20 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-6">
+          <Card className="max-w-2xl w-full p-12 text-center">
+            {/* Animated Header */}
+            <h2 className="text-4xl font-bold text-gray-800 mb-2 animate-pulse">AI is Creating Your Videos...</h2>
+
+            {/* Pulsing Loader */}
+            <div className="flex justify-center my-8">
+              <Loader2 className="h-20 w-20 text-indigo-600 animate-spin" />
             </div>
 
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">Analyzing your content...</h2>
-            <p className="text-gray-600 text-lg mb-6">Our AI is crafting 5 unique video concepts</p>
-
-            <div className="bg-indigo-50 rounded-lg p-6 mb-6">
-              <p className="text-indigo-700 font-semibold mb-3">Generating Hook Types:</p>
-              <div className="space-y-2 text-left">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-indigo-500 rounded-full" />
-                  <span className="text-gray-700">Pain Point - Identifies audience struggles</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-purple-500 rounded-full" />
-                  <span className="text-gray-700">Transformation - Shows before/after</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-pink-500 rounded-full" />
-                  <span className="text-gray-700">Social Proof - Leverages testimonials</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-indigo-500 rounded-full" />
-                  <span className="text-gray-700">Quick Win - Promises fast results</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 bg-purple-500 rounded-full" />
-                  <span className="text-gray-700">Curiosity Gap - Creates intrigue</span>
-                </div>
+            {/* Progress Bar */}
+            <div className="mb-8">
+              <div className="flex justify-between text-sm text-gray-600 mb-2">
+                <span>Progress</span>
+                <span>{Math.round(progressPercentage)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${progressPercentage}%` }}
+                />
               </div>
             </div>
 
+            {/* Current Phase */}
+            <div className="bg-indigo-50 rounded-xl p-6 mb-6">
+              <p className="text-2xl font-semibold text-indigo-700">{progress.phase}</p>
+            </div>
+
+            {/* Info Text */}
+            <p className="text-gray-500 text-sm mb-8">This takes 2-4 minutes. You can safely stay on this page.</p>
+
+            {/* Cancel Button */}
             <Button
               onClick={handleCancel}
               variant="outline"
-              className="mt-6 px-6 py-2 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors bg-transparent"
+              className="px-6 py-2 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition-colors bg-transparent"
             >
               Cancel
             </Button>
@@ -574,35 +608,30 @@ function StoryforgeApp() {
         </div>
       )}
 
-      {/* SCREEN 3: Results */}
+      {/* SCREEN 3: Results - UPDATED */}
       {screen === "results" && (
         <div className="max-w-7xl mx-auto">
-          {/* Success Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-3 bg-green-100 text-green-700 px-6 py-3 rounded-full mb-4">
-              <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              <span className="font-semibold text-lg">Your 5 videos are ready!</span>
+          {/* Success Header with Celebration */}
+          <div className="text-center mb-12">
+            <div className="flex justify-center mb-4">
+              <CheckCircle2 className="h-20 w-20 text-green-500" />
             </div>
+            <h1 className="text-5xl font-bold text-gray-800 mb-3">Your Videos Are Ready!</h1>
+            <p className="text-xl text-gray-600 mb-8">5 unique promotional videos generated successfully</p>
 
-            <div className="flex flex-wrap justify-center gap-4 mb-8">
+            <div className="flex flex-wrap justify-center gap-4">
               <Button
                 onClick={handleDownloadAll}
-                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200"
+                className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-lg"
               >
                 Download All (ZIP)
               </Button>
               <Button
                 onClick={handleGenerateNew}
                 variant="outline"
-                className="px-6 py-3 bg-white text-indigo-600 font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-2 border-indigo-200"
+                className="px-8 py-4 bg-white text-indigo-600 font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-2 border-indigo-200 text-lg"
               >
-                Generate New
+                Generate More Videos
               </Button>
             </div>
           </div>
