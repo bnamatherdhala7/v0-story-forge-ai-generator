@@ -396,7 +396,7 @@ function StoryforgeApp() {
             <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-3">
               StoryForge AI
             </h1>
-            <p className="text-gray-600 text-lg">Generate promotional videos for your course in minutes</p>
+            <p className="text-gray-600 text-lg">Generate promotional videos for your course or product in minutes</p>
           </div>
 
           {/* Main Form Card */}
