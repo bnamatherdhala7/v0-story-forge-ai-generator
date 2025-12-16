@@ -99,6 +99,13 @@ function StoryforgeApp() {
     brandTone: "educational",
     brandColor: "#6366F1",
   })
+  const [lastSubmittedData, setLastSubmittedData] = useState<{
+    courseName: string
+    description: string
+    brandTone: string
+    brandColor: string
+    images: string[]
+  } | null>(null)
   const [screen, setScreen] = useState<"upload" | "processing" | "results">("upload")
   const [videos, setVideos] = useState<Video[]>([])
   const [validationError, setValidationError] = useState("")
@@ -210,7 +217,7 @@ function StoryforgeApp() {
   }
 
   const isFormValid = () => {
-    const isImagesValid = uploadedImages.length >= 5 && uploadedImages.length <= 8
+    const isImagesValid = uploadedImages.length >= 1 && uploadedImages.length <= 8
     const isCourseNameValid = formData.courseName.trim().length >= 3
     const isDescriptionValid = formData.description.trim().length >= 50
     const isToneValid = ["educational", "inspiring", "relatable"].includes(formData.brandTone.toLowerCase())
@@ -219,13 +226,13 @@ function StoryforgeApp() {
   }
 
   const handleGenerate = async () => {
-    console.log("[v0] 🎯 Generate button clicked")
-    console.log("[v0] 📸 Uploaded images count:", uploadedImages.length)
-    console.log("[v0] 📸 First image preview:", uploadedImages[0]?.substring(0, 50))
+    console.log("[v0] 🚀 Generate button clicked")
+    console.log("[v0] 📋 Form data:", formData)
+    console.log("[v0] 🖼️ Uploaded images count:", uploadedImages.length)
 
     // Validate all fields
-    if (uploadedImages.length < 5 || uploadedImages.length > 8) {
-      setValidationError("Please upload 5-8 images")
+    if (uploadedImages.length < 1) {
+      setValidationError("Please upload at least 1 image")
       return
     }
 
@@ -254,24 +261,39 @@ function StoryforgeApp() {
     setProgress({ current: 0, total: 5, phase: "Analyzing your content..." })
 
     try {
+      const submittedData = {
+        courseName: formData.courseName,
+        description: formData.description,
+        brandTone: formData.brandTone,
+        brandColor: formData.brandColor,
+        images: uploadedImages,
+      }
+      setLastSubmittedData(submittedData)
+
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          courseName: formData.courseName,
-          description: formData.description,
-          brandTone: formData.brandTone,
-          brandColor: formData.brandColor,
-          images: uploadedImages, // Already an array of base64 strings
-        }),
+        body: JSON.stringify(submittedData),
       })
 
       const data = await response.json()
 
       if (!response.ok || data.status === "error") {
-        throw new Error(data.message || "Failed to start video generation")
+        let errorMsg = data.message || "Failed to start video generation"
+        if (errorMsg.includes("webhook") && errorMsg.includes("not registered")) {
+          errorMsg =
+            "⚠️ n8n Workflow Not Active\n\n" +
+            "Please activate your n8n workflow:\n" +
+            "1. Go to your n8n editor\n" +
+            "2. Click 'Execute workflow' button (for test URL)\n" +
+            "   OR\n" +
+            "   Enable the workflow toggle (top-right) for production URL\n" +
+            "3. Try again\n\n" +
+            "Note: Test webhooks only work for one call after activation."
+        }
+        throw new Error(errorMsg)
       }
 
       // Store jobId and start polling
@@ -301,6 +323,44 @@ function StoryforgeApp() {
     setJobId(null)
     setProcessingStatus("idle")
     setProgress({ current: 0, total: 5, phase: "Initializing..." })
+  }
+
+  const handleGenerateMore = async () => {
+    if (!lastSubmittedData) {
+      setErrorMessage("No previous data found. Please submit the form first.")
+      return
+    }
+
+    console.log("[v0] 🔄 Generating more videos with previous data")
+
+    // Move to processing screen
+    setProcessingStatus("processing")
+    setScreen("processing")
+    setProgress({ current: 0, total: 5, phase: "Analyzing your content..." })
+
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(lastSubmittedData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || data.status === "error") {
+        throw new Error(data.message || "Failed to start video generation")
+      }
+
+      // Store jobId and start polling
+      setJobId(data.jobId)
+    } catch (error) {
+      console.error("[v0] ❌ Error starting job:", error)
+      setProcessingStatus("error")
+      setErrorMessage(error instanceof Error ? error.message : "Failed to start video generation")
+      setScreen("results") // Return to results instead of upload
+    }
   }
 
   const handleDownload = (videoUrl: string, hookType: string) => {
@@ -336,7 +396,7 @@ function StoryforgeApp() {
             <h1 className="text-5xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-3">
               StoryForge AI
             </h1>
-            <p className="text-gray-600 text-lg">Generate 5 unique promotional videos for your course in minutes</p>
+            <p className="text-gray-600 text-lg">Generate promotional videos for your course in minutes</p>
           </div>
 
           {/* Main Form Card */}
@@ -369,8 +429,8 @@ function StoryforgeApp() {
 
             {/* Image Upload Section */}
             <div className="mb-8">
-              <label className="block text-gray-700 font-semibold mb-3 text-lg">
-                Upload Images (5-8 required) <span className="text-red-500">*</span>
+              <label htmlFor="images" className="block text-sm font-medium mb-2">
+                Upload Images <span className="text-red-500">*</span>
               </label>
 
               {/* Upload Drop Zone */}
@@ -435,7 +495,7 @@ function StoryforgeApp() {
               )}
               <p
                 className={`text-sm mt-2 ${
-                  uploadedImages.length >= 5 && uploadedImages.length <= 8
+                  uploadedImages.length >= 1 && uploadedImages.length <= 8
                     ? "text-green-600 font-semibold"
                     : uploadedImages.length > 0
                       ? "text-orange-600 font-semibold"
@@ -443,7 +503,7 @@ function StoryforgeApp() {
                 }`}
               >
                 {uploadedImages.length} image{uploadedImages.length !== 1 ? "s" : ""} uploaded
-                {uploadedImages.length > 0 && uploadedImages.length < 5 && " (need at least 5)"}
+                {uploadedImages.length > 0 && uploadedImages.length < 1 && " (need at least 1)"}
                 {uploadedImages.length > 8 && " (maximum 8 allowed)"}
               </p>
             </div>
@@ -542,7 +602,7 @@ function StoryforgeApp() {
                   : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }`}
             >
-              {processingStatus === "processing" ? "Processing..." : "Generate 5 Videos"}
+              {processingStatus === "processing" ? "Processing..." : "Generate Videos"}
             </Button>
 
             {validationError && (
@@ -555,9 +615,7 @@ function StoryforgeApp() {
 
           {/* Info Footer */}
           <div className="text-center text-gray-500 text-sm">
-            <p>
-              AI will generate 5 video hooks: Pain Point, Transformation, Social Proof, Quick Win, and Curiosity Gap
-            </p>
+            <p>AI will generate video hooks based on your input</p>
           </div>
         </div>
       )}
@@ -617,7 +675,7 @@ function StoryforgeApp() {
               <CheckCircle2 className="h-20 w-20 text-green-500" />
             </div>
             <h1 className="text-5xl font-bold text-gray-800 mb-3">Your Videos Are Ready!</h1>
-            <p className="text-xl text-gray-600 mb-8">5 unique promotional videos generated successfully</p>
+            <p className="text-xl text-gray-600 mb-8">Your promotional videos have been generated successfully</p>
 
             <div className="flex flex-wrap justify-center gap-4">
               <Button
@@ -627,11 +685,17 @@ function StoryforgeApp() {
                 Download All (ZIP)
               </Button>
               <Button
+                onClick={handleGenerateMore}
+                className="px-8 py-4 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-lg"
+              >
+                Generate More Videos
+              </Button>
+              <Button
                 onClick={handleGenerateNew}
                 variant="outline"
                 className="px-8 py-4 bg-white text-indigo-600 font-semibold rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 border-2 border-indigo-200 text-lg"
               >
-                Generate More Videos
+                Start New Project
               </Button>
             </div>
           </div>
