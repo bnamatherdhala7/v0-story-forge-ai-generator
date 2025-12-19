@@ -34,14 +34,14 @@ export async function POST(request: NextRequest) {
     // Generate a unique job ID
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-    // Start async processing (fire and forget)
     const payload = {
       courseName: String(body.courseName || "").trim(),
       description: String(body.description || "").trim(),
+      hookType: String(body.hookType || "Pain Point").trim(),
       brandTone: String(body.brandTone || "educational").toLowerCase(),
       brandColor: String(body.brandColor || "#6366F1").trim(),
       images: Array.isArray(body.images) ? body.images : [],
-      jobId, // Pass jobId to n8n
+      jobId,
     }
 
     // Start the async job (don't await)
@@ -102,6 +102,7 @@ async function processJobAsync(jobId: string, payload: any) {
     console.log("[v0] 📦 Payload:", {
       courseName: payload.courseName,
       description: `${payload.description.substring(0, 50)}...`,
+      hookType: payload.hookType,
       brandTone: payload.brandTone,
       brandColor: payload.brandColor,
       imagesCount: payload.images.length,
@@ -115,7 +116,7 @@ async function processJobAsync(jobId: string, payload: any) {
         Accept: "application/json",
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(10000), // 10 second timeout for immediate response
+      signal: AbortSignal.timeout(10000),
     })
 
     console.log("[v0] 📨 n8n response status:", response.status)
@@ -124,62 +125,136 @@ async function processJobAsync(jobId: string, payload: any) {
       const responseText = await response.text()
       console.log("[v0] 📨 n8n acknowledged request:", responseText.substring(0, 200))
 
-      // Since n8n responds immediately, simulate processing time with mock data
-      setTimeout(() => {
-        jobStore[jobId] = {
-          status: "completed",
-          progress: { current: 4, total: 4, phase: "Finalizing your content..." },
-          videos: generateMockVideos(),
+      setTimeout(async () => {
+        try {
+          const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              courseName: payload.courseName,
+              description: payload.description,
+              hookType: payload.hookType,
+              brandTone: payload.brandTone,
+            }),
+          })
+
+          const aiData = await aiResponse.json()
+
+          if (aiData.status === "success") {
+            jobStore[jobId] = {
+              status: "completed",
+              progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+              videos: aiData.videos,
+            }
+          } else {
+            throw new Error(aiData.message || "AI generation failed")
+          }
+        } catch (error) {
+          console.log("[v0] ⚠️ AI generation failed, using fallback")
+          jobStore[jobId] = {
+            status: "completed",
+            progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+            videos: generateFallbackVideos(payload),
+          }
         }
-      }, 8000) // Wait 8 more seconds to simulate total ~20s processing
+      }, 8000)
 
       return
     }
 
-    // If n8n returns error, use mock data
-    console.log(`[v0] ℹ️ n8n unavailable, using mock data (status: ${response.status})`)
+    console.log(`[v0] ℹ️ n8n unavailable, using AI generation (status: ${response.status})`)
 
-    setTimeout(() => {
-      jobStore[jobId] = {
-        status: "completed",
-        progress: { current: 4, total: 4, phase: "Finalizing your content..." },
-        videos: generateMockVideos(),
+    setTimeout(async () => {
+      try {
+        const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            courseName: payload.courseName,
+            description: payload.description,
+            hookType: payload.hookType,
+            brandTone: payload.brandTone,
+          }),
+        })
+
+        const aiData = await aiResponse.json()
+
+        if (aiData.status === "success") {
+          jobStore[jobId] = {
+            status: "completed",
+            progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+            videos: aiData.videos,
+          }
+        } else {
+          throw new Error(aiData.message || "AI generation failed")
+        }
+      } catch (error) {
+        console.log("[v0] ⚠️ AI generation failed, using fallback")
+        jobStore[jobId] = {
+          status: "completed",
+          progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+          videos: generateFallbackVideos(payload),
+        }
       }
     }, 8000)
   } catch (error) {
-    console.log("[v0] ℹ️ Using mock data due to connection issue:", error instanceof Error ? error.message : error)
+    console.log("[v0] ℹ️ Using AI generation due to connection issue:", error instanceof Error ? error.message : error)
 
-    setTimeout(() => {
-      jobStore[jobId] = {
-        status: "completed",
-        progress: { current: 4, total: 4, phase: "Finalizing your content..." },
-        videos: generateMockVideos(),
+    setTimeout(async () => {
+      try {
+        const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            courseName: payload.courseName,
+            description: payload.description,
+            hookType: payload.hookType,
+            brandTone: payload.brandTone,
+          }),
+        })
+
+        const aiData = await aiResponse.json()
+
+        if (aiData.status === "success") {
+          jobStore[jobId] = {
+            status: "completed",
+            progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+            videos: aiData.videos,
+          }
+        } else {
+          throw new Error(aiData.message || "AI generation failed")
+        }
+      } catch (error) {
+        console.log("[v0] ⚠️ AI generation failed, using fallback")
+        jobStore[jobId] = {
+          status: "completed",
+          progress: { current: 4, total: 4, phase: "Finalizing your content..." },
+          videos: generateFallbackVideos(payload),
+        }
       }
     }, 8000)
   }
 }
 
-function generateMockVideos() {
+function generateFallbackVideos(payload: any) {
   return [
     {
       id: 1,
-      hookType: "Pain Point",
-      hookTitle: "Feeling Unprepared for AI PM Roles?",
+      hookType: payload.hookType,
+      hookTitle: `Transform Your ${payload.courseName}`,
       videoUrl: "https://via.placeholder.com/1080x1920.mp4",
-      thumbnailUrl: "https://via.placeholder.com/1080x1920/6366F1/FFFFFF?text=Pain+Point",
+      thumbnailUrl: "https://via.placeholder.com/1080x1920/6366F1/FFFFFF?text=Video+1",
       duration: "15s",
-      script:
-        "Are you struggling to land AI product management roles? You're not alone. The AI revolution is moving fast, and traditional PM skills aren't enough anymore. But here's the thing - you don't need a PhD to succeed. What you need is the right framework, and that's exactly what we're offering. Transform your career in just 48 hours.",
+      script: `Discover how ${payload.courseName} can help you achieve your goals. ${payload.description.substring(0, 100)}`,
     },
     {
       id: 2,
-      hookType: "Transformation",
-      hookTitle: "From Confused to Confident AI Leader",
+      hookType: payload.hookType,
+      hookTitle: `Why Choose ${payload.courseName}?`,
       videoUrl: "https://via.placeholder.com/1080x1920.mp4",
-      thumbnailUrl: "https://via.placeholder.com/1080x1920/8B5CF6/FFFFFF?text=Transformation",
+      thumbnailUrl: "https://via.placeholder.com/1080x1920/8B5CF6/FFFFFF?text=Video+2",
       duration: "15s",
-      script:
-        "Six months ago, I had no idea how to talk about AI in product meetings. Today, I'm leading AI initiatives at a Fortune 500 company. The difference? I stopped trying to learn everything and focused on what actually matters. This course distills years of experience into practical, actionable frameworks you can use immediately. No fluff, just results.",
+      script: `Join thousands who have already benefited from ${payload.courseName}. Start your journey today.`,
     },
   ]
 }

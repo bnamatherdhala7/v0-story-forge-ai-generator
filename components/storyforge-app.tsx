@@ -69,6 +69,7 @@ interface UploadedImage {
 interface FormData {
   courseName: string
   description: string
+  hookType: string
   brandTone: string
   brandColor: string
 }
@@ -96,12 +97,14 @@ function StoryforgeApp() {
   const [formData, setFormData] = useState<FormData>({
     courseName: "",
     description: "",
+    hookType: "pain-point",
     brandTone: "educational",
     brandColor: "#6366F1",
   })
   const [lastSubmittedData, setLastSubmittedData] = useState<{
     courseName: string
     description: string
+    hookType: string
     brandTone: string
     brandColor: string
     images: string[]
@@ -264,6 +267,7 @@ function StoryforgeApp() {
       const submittedData = {
         courseName: formData.courseName,
         description: formData.description,
+        hookType: formData.hookType,
         brandTone: formData.brandTone,
         brandColor: formData.brandColor,
         images: uploadedImages,
@@ -316,6 +320,7 @@ function StoryforgeApp() {
     setFormData({
       courseName: "",
       description: "",
+      hookType: "pain-point",
       brandTone: "educational",
       brandColor: "#6366F1",
     })
@@ -518,7 +523,7 @@ function StoryforgeApp() {
                 <input
                   type="text"
                   id="courseName"
-                  placeholder="e.g., AI Product Management Masterclass"
+                  placeholder="e.g., Productivity Masterclass, SkinCare Starter Kit"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                   value={formData.courseName}
                   onChange={(e) => setFormData({ ...formData, courseName: e.target.value })}
@@ -553,6 +558,27 @@ function StoryforgeApp() {
                   disabled={processingStatus === "processing"}
                   required
                 />
+              </div>
+
+              {/* Hook Type */}
+              <div>
+                <label htmlFor="hookType" className="block text-sm font-semibold text-gray-700 mb-2">
+                  Hook Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  id="hookType"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  value={formData.hookType}
+                  onChange={(e) => setFormData({ ...formData, hookType: e.target.value })}
+                  disabled={processingStatus === "processing"}
+                  required
+                >
+                  <option value="pain-point">Pain Point</option>
+                  <option value="transformation">Transformation</option>
+                  <option value="social-proof">Social Proof</option>
+                  <option value="behind-the-scenes">Behind-the-Scenes</option>
+                  <option value="objection-handling">Objection-Handling</option>
+                </select>
               </div>
 
               {/* Brand Tone */}
