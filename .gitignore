@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment files — never commit
+.env
+.env.*
+!.env.example
+
+# Next.js build output
+.next/
+out/
+dist/
+
+# Misc
+.DS_Store
+*.log
+.cache/

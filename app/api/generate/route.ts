@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 const N8N_WEBHOOK_URL = "https://bharat77.app.n8n.cloud/webhook/storyforge-generate"
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,40 +62,58 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Store job status in memory (in production, use Redis or database)
-const jobStore: Record<
-  string,
-  {
-    status: "processing" | "completed" | "error"
-    progress: { current: number; total: number; phase: string }
-    videos?: any[]
-    error?: string
-  }
-> = {}
+// ⚠️  In-memory store — works locally but breaks on Vercel (new instance per request).
+// To fix for production:
+//   1. pnpm add @upstash/redis
+//   2. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in .env.local
+//   3. Replace setJob/getJob below with Redis calls (see Architecture.md for the snippet)
+
+if (!process.env.UPSTASH_REDIS_REST_URL) {
+  console.warn("[v0] ⚠️  UPSTASH_REDIS_REST_URL not set — using in-memory job store (not suitable for production)")
+}
+
+type JobState = {
+  status: "processing" | "completed" | "error"
+  progress: { current: number; total: number; phase: string }
+  videos?: any[]
+  error?: string
+}
+
+const jobStore: Record<string, JobState> = {}
+
+function setJob(jobId: string, state: JobState): void {
+  jobStore[jobId] = state
+}
+
+function getJob(jobId: string): JobState | null {
+  return jobStore[jobId] ?? null
+}
+
+export { getJob }
 
 async function processJobAsync(jobId: string, payload: any) {
   try {
     // Initialize job status
-    jobStore[jobId] = {
+    setJob(jobId, {
       status: "processing",
       progress: { current: 0, total: 4, phase: "Analyzing your content..." },
-    }
+    })
 
     setTimeout(() => {
-      if (jobStore[jobId]) {
-        jobStore[jobId].progress = { current: 1, total: 4, phase: "Writing engaging scripts..." }
+      if (getJob(jobId)) {
+        setJob(jobId, { ...getJob(jobId)!, progress: { current: 1, total: 4, phase: "Writing engaging scripts..." } })
       }
     }, 3000)
 
     setTimeout(() => {
-      if (jobStore[jobId]) {
-        jobStore[jobId].progress = { current: 2, total: 4, phase: "Planning cinematography..." }
+      if (getJob(jobId)) {
+        setJob(jobId, { ...getJob(jobId)!, progress: { current: 2, total: 4, phase: "Planning cinematography..." } })
       }
     }, 8000)
 
     setTimeout(() => {
-      if (jobStore[jobId]) {
-        jobStore[jobId].progress = { current: 3, total: 4, phase: "Generating videos..." }
+      if (getJob(jobId)) {
+        setJob(jobId, { ...getJob(jobId)!, progress: { current: 3, total: 4, phase: "Generating videos..." } })
       }
     }, 15000)
 
@@ -127,7 +146,7 @@ async function processJobAsync(jobId: string, payload: any) {
 
       setTimeout(async () => {
         try {
-          const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+          const aiResponse = await fetch(`${APP_URL}/api/generate-videos-ai`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -141,21 +160,21 @@ async function processJobAsync(jobId: string, payload: any) {
           const aiData = await aiResponse.json()
 
           if (aiData.status === "success") {
-            jobStore[jobId] = {
+            setJob(jobId, {
               status: "completed",
               progress: { current: 4, total: 4, phase: "Finalizing your content..." },
               videos: aiData.videos,
-            }
+            })
           } else {
             throw new Error(aiData.message || "AI generation failed")
           }
         } catch (error) {
           console.log("[v0] ⚠️ AI generation failed, using fallback")
-          jobStore[jobId] = {
+          setJob(jobId, {
             status: "completed",
             progress: { current: 4, total: 4, phase: "Finalizing your content..." },
             videos: generateFallbackVideos(payload),
-          }
+          })
         }
       }, 8000)
 
@@ -166,7 +185,7 @@ async function processJobAsync(jobId: string, payload: any) {
 
     setTimeout(async () => {
       try {
-        const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+        const aiResponse = await fetch(`${APP_URL}/api/generate-videos-ai`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -180,21 +199,21 @@ async function processJobAsync(jobId: string, payload: any) {
         const aiData = await aiResponse.json()
 
         if (aiData.status === "success") {
-          jobStore[jobId] = {
+          setJob(jobId, {
             status: "completed",
             progress: { current: 4, total: 4, phase: "Finalizing your content..." },
             videos: aiData.videos,
-          }
+          })
         } else {
           throw new Error(aiData.message || "AI generation failed")
         }
       } catch (error) {
         console.log("[v0] ⚠️ AI generation failed, using fallback")
-        jobStore[jobId] = {
+        setJob(jobId, {
           status: "completed",
           progress: { current: 4, total: 4, phase: "Finalizing your content..." },
           videos: generateFallbackVideos(payload),
-        }
+        })
       }
     }, 8000)
   } catch (error) {
@@ -202,7 +221,7 @@ async function processJobAsync(jobId: string, payload: any) {
 
     setTimeout(async () => {
       try {
-        const aiResponse = await fetch("http://localhost:3000/api/generate-videos-ai", {
+        const aiResponse = await fetch(`${APP_URL}/api/generate-videos-ai`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -216,21 +235,21 @@ async function processJobAsync(jobId: string, payload: any) {
         const aiData = await aiResponse.json()
 
         if (aiData.status === "success") {
-          jobStore[jobId] = {
+          setJob(jobId, {
             status: "completed",
             progress: { current: 4, total: 4, phase: "Finalizing your content..." },
             videos: aiData.videos,
-          }
+          })
         } else {
           throw new Error(aiData.message || "AI generation failed")
         }
       } catch (error) {
         console.log("[v0] ⚠️ AI generation failed, using fallback")
-        jobStore[jobId] = {
+        setJob(jobId, {
           status: "completed",
           progress: { current: 4, total: 4, phase: "Finalizing your content..." },
           videos: generateFallbackVideos(payload),
-        }
+        })
       }
     }, 8000)
   }

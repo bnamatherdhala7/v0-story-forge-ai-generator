@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { jobStore } from "../../generate/route"
+import { getJob } from "../../generate/route"
 
 export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
   try {
     const { jobId } = params
 
-    const job = jobStore[jobId]
+    const job = getJob(jobId)
 
     if (!job) {
       return NextResponse.json({ status: "error", error: "Job not found" }, { status: 404 })

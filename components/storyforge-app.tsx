@@ -311,7 +311,16 @@ function StoryforgeApp() {
   }
 
   const handleDownloadAll = () => {
-    alert("Download all functionality - integrate with your backend")
+    videos.forEach((video) => {
+      const content = `Hook Type: ${video.hookType}\nTitle: ${video.hookTitle}\n\n${video.script}`
+      const blob = new Blob([content], { type: "text/plain" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${video.hookType.replace(/[^a-z0-9]/gi, "_")}_script.txt`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    })
   }
 
   const handleGenerateNew = () => {
@@ -368,8 +377,15 @@ function StoryforgeApp() {
     }
   }
 
-  const handleDownload = (videoUrl: string, hookType: string) => {
-    alert(`Download video: ${hookType}`)
+  const handleDownload = (script: string, hookType: string, hookTitle: string) => {
+    const content = `Hook Type: ${hookType}\nTitle: ${hookTitle}\n\n${script}`
+    const blob = new Blob([content], { type: "text/plain" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${hookType.replace(/[^a-z0-9]/gi, "_")}_script.txt`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const handleCancel = () => {
@@ -577,7 +593,12 @@ function StoryforgeApp() {
                   <option value="transformation">Transformation</option>
                   <option value="social-proof">Social Proof</option>
                   <option value="behind-the-scenes">Behind-the-Scenes</option>
-                  <option value="objection-handling">Objection-Handling</option>
+                  <option value="objection-handling">Objection Handling</option>
+                  <option value="curiosity-gap">Curiosity Gap</option>
+                  <option value="quick-win">Quick Win</option>
+                  <option value="authority">Authority</option>
+                  <option value="urgency-scarcity">Urgency/Scarcity</option>
+                  <option value="story-hook">Story Hook</option>
                 </select>
               </div>
 
@@ -708,7 +729,7 @@ function StoryforgeApp() {
                 onClick={handleDownloadAll}
                 className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all duration-200 text-lg"
               >
-                Download All (ZIP)
+                Download All Scripts
               </Button>
               <Button
                 onClick={handleGenerateMore}
@@ -760,10 +781,10 @@ function StoryforgeApp() {
                   )}
 
                   <Button
-                    onClick={() => handleDownload(video.videoUrl, video.hookType)}
+                    onClick={() => handleDownload(video.script, video.hookType, video.hookTitle)}
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg transition-colors"
                   >
-                    Download
+                    Download Script
                   </Button>
                 </div>
               </Card>
