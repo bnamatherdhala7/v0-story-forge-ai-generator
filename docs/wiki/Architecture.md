@@ -2,157 +2,225 @@
 
 ## System overview
 
-StoryForge has three layers:
+StoryForge uses a 4-agent pipeline to replicate the logic of a professional creative team:
 
 ```
-┌─────────────────────────────────────┐
-│  Frontend (Next.js)                 │
-│  storyforge-app.tsx — 3 screens     │
-│  upload → processing → results      │
-└──────────────┬──────────────────────┘
-               │ POST /api/generate
+┌──────────────────────────────────────────────────────────────┐
+│  Frontend (Next.js)                                          │
+│  3 screens: upload form → processing → results               │
+└─────────────────────────┬────────────────────────────────────┘
+                          │ POST /api/generate
+                          ▼
+┌──────────────────────────────────────────────────────────────┐
+│  /api/generate (Next.js serverless)                          │
+│  Validates → creates jobId → fires processJobAsync()         │
+│  Returns { jobId } immediately                               │
+└──────────────┬───────────────────────────────────────────────┘
+               │ async (no await)
                ▼
-┌─────────────────────────────────────┐
-│  API Routes (Next.js serverless)    │
-│  /api/generate      — create job    │
-│  /api/status/[id]   — poll status   │
-│  /api/generate-videos-ai — scripts  │
-└──────┬──────────────────────────────┘
-       │ fire-and-forget POST
-       ▼
-┌─────────────────────────────────────┐
-│  n8n Workflow                       │
-│  bharat77.app.n8n.cloud             │
-│  Validate → Generate → Respond      │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  processJobAsync()                                           │
+│                                                              │
+│  Agent 1: Creative Director                                  │
+│    Selects best assets per hook type                         │
+│              ↓                                               │
+│  Agent 2: Scriptwriter                                       │
+│    Writes 15s script per hook with timing structure          │
+│              ↓                                               │
+│  Agent 3: Cinematographer                                    │
+│    Builds scene manifest: image → scene → overlay → timing   │
+│              ↓                                               │
+│  Agent 4: Video Renderer (Creatomate / Shotstack)            │
+│    Renders scene manifest → .mp4 with brand + music          │
+└──────────────┬───────────────────────────────────────────────┘
+               │ status updates
+               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Redis (Upstash) — job state store                           │
+│  { status, progress, videos }                                │
+└──────────────┬───────────────────────────────────────────────┘
+               │ GET /api/status/{jobId} every 3s
+               ▼
+┌──────────────────────────────────────────────────────────────┐
+│  Browser — results screen                                    │
+│  10 video cards with scripts, thumbnails, download links     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Request lifecycle
+## The 4 agents
 
+### Agent 1 — Creative Director
+
+**Responsibility:** Analyze the creator's goal and uploaded assets. Select which images and testimonials best communicate each hook type's emotional tone.
+
+**Input:**
+```json
+{
+  "goal": "awareness | conversion | testimonial",
+  "assets": ["image_1.jpg", "testimonial_screenshot.png", ...],
+  "brandTone": "educational | inspiring | relatable",
+  "hookType": "Pain Point"
+}
 ```
-1.  User submits form
-        ↓
-2.  POST /api/generate
-    - Validates: courseName, description, images, hookType, brandTone
-    - Generates jobId = "job_{timestamp}_{random}"
-    - Stores job in jobStore: { status: "processing", progress: {...} }
-    - Calls processJobAsync(jobId, payload) — no await
-    - Returns: { jobId, status: "processing" }
-        ↓
-3.  Browser polls GET /api/status/{jobId} every 3 seconds
-        ↓
-4.  processJobAsync() runs in background
-    ├─ t=0s:  progress → "Analyzing your content..."
-    ├─ t=3s:  progress → "Writing engaging scripts..."
-    ├─ t=8s:  progress → "Planning cinematography..."
-    ├─ t=8s:  fires POST to n8n webhook (non-blocking)
-    └─ t=8s:  calls /api/generate-videos-ai (OpenAI)
-              └─ on success: stores videos in jobStore
-              └─ on fail:    stores fallback template scripts
-        ↓
-5.  Browser receives { status: "completed", videos: [...] }
-    → renders results screen
+
+**Output:**
+```json
+{
+  "hook_type": "Pain Point",
+  "selected_assets": ["image_2.jpg", "image_5.jpg"],
+  "brand_feeling": "relatable struggle with hopeful resolution",
+  "asset_rationale": "image_2 shows frustration; image_5 shows the transformation moment"
+}
 ```
+
+**Current state:** Not yet implemented. v0.2 priority.
 
 ---
 
-## File structure
+### Agent 2 — Scriptwriter
+
+**Responsibility:** Write a 15-second script optimized for the hook's psychological mechanism. Structure: hook (0–2s) → value (3–10s) → CTA (11–15s).
+
+**Input:**
+```json
+{
+  "hook_type": "Pain Point",
+  "course_name": "AI PM Bootcamp",
+  "description": "...",
+  "brand_tone": "educational",
+  "selected_assets": [...],
+  "brand_feeling": "..."
+}
+```
+
+**Output:**
+```json
+{
+  "hook_title": "Struggling to Land AI PM Roles?",
+  "script": "Are you applying to AI PM roles and hearing nothing back? You're not alone...",
+  "scene_timing": [
+    { "second": 0, "text": "Struggling to land AI PM roles?", "type": "hook" },
+    { "second": 3, "text": "You're not alone. Here's what changed for me...", "type": "value" },
+    { "second": 12, "text": "Join 200+ PMs who made the switch →", "type": "cta" }
+  ]
+}
+```
+
+**Current state:** Partially built (`/api/generate-videos-ai`). Generates 2 scripts. Needs: all 10 hooks, timing structure, asset context in prompt.
+
+---
+
+### Agent 3 — Cinematographer
+
+**Responsibility:** Match each scene moment from the Scriptwriter's timing structure to the best available image. Determine visual transitions, text overlay placement, and motion type.
+
+**Input:**
+```json
+{
+  "scene_timing": [...],
+  "available_assets": ["image_1.jpg", "image_2.jpg"],
+  "brand_color": "#6366F1",
+  "duration": 15
+}
+```
+
+**Output (scene manifest):**
+```json
+{
+  "scenes": [
+    {
+      "image": "image_2.jpg",
+      "start_second": 0,
+      "end_second": 3,
+      "text_overlay": "Struggling to land AI PM roles?",
+      "text_position": "center",
+      "motion": "ken_burns_in",
+      "transition": "fade"
+    }
+  ],
+  "background_music": "upbeat_hopeful_low",
+  "brand_color": "#6366F1"
+}
+```
+
+**Current state:** Not yet implemented. v0.2 priority.
+
+---
+
+### Agent 4 — Video Renderer
+
+**Responsibility:** Take the Cinematographer's scene manifest and render a real `.mp4` file. Applies brand color overlays, text animations, and background music.
+
+**Integration options:**
+
+| Service | Approach | Cost/video | Latency |
+|---|---|---|---|
+| [Creatomate](https://creatomate.com) | JSON template → rendered video | ~$0.05–0.20 | 10–30s |
+| [Shotstack](https://shotstack.io) | JSON timeline → rendered video | ~$0.05–0.15 | 15–45s |
+| [Remotion](https://remotion.dev) | React component → rendered video | Infrastructure cost | 30–120s |
+
+**Current state:** Returns placeholder URLs. v0.3 priority.
+
+---
+
+## Current file structure
 
 ```
 v0-story-forge-ai-generator/
 ├── app/
 │   ├── api/
-│   │   ├── generate/
-│   │   │   └── route.ts          ← main job endpoint + processJobAsync
-│   │   ├── generate-videos-ai/
-│   │   │   └── route.ts          ← OpenAI script generation
-│   │   └── status/
-│   │       └── [jobId]/
-│   │           └── route.ts      ← job status polling
+│   │   ├── generate/route.ts          ← job creation + processJobAsync
+│   │   ├── generate-videos-ai/route.ts ← OpenAI script generation (partial Scriptwriter)
+│   │   └── status/[jobId]/route.ts    ← job polling
 │   ├── layout.tsx
 │   └── page.tsx
 ├── components/
-│   ├── storyforge-app.tsx         ← entire frontend (3 screens, ~780 lines)
-│   └── ui/                        ← Radix UI components
-├── lib/
-│   └── utils.ts
-├── storyforge-workflow.json       ← n8n workflow export
+│   ├── storyforge-app.tsx             ← full 3-screen UI (~780 lines)
+│   └── ui/                            ← Radix UI components
+├── storyforge-workflow.json           ← n8n workflow export
 ├── PRD.md
 └── README.md
 ```
 
 ---
 
-## State management
+## Job store — current issue and fix
 
-The frontend uses React `useState` with three screens:
-
-| State | Type | Values |
-|---|---|---|
-| `screen` | string | `upload` / `processing` / `results` |
-| `processingStatus` | string | `idle` / `processing` / `completed` / `error` |
-| `jobId` | string \| null | job ID from `/api/generate` |
-| `progress` | object | `{ current, total, phase }` |
-| `videos` | array | completed video objects |
-| `uploadedImages` | string[] | base64 data URIs |
-| `lastSubmittedData` | object | saved for "Generate More" re-use |
-
----
-
-## Job store
-
-Jobs are stored in an in-memory object in `app/api/generate/route.ts`:
-
+**Current (broken in production):**
 ```typescript
-const jobStore: Record<string, {
-  status: "processing" | "completed" | "error"
-  progress: { current: number; total: number; phase: string }
-  videos?: Video[]
-  error?: string
-}> = {}
+// app/api/generate/route.ts
+const jobStore: Record<string, JobState> = {}  // in-memory, per-instance
 ```
+Vercel serverless can spin up a new instance for each poll request. The `jobStore` on the new instance is empty → `GET /api/status/{jobId}` returns 404.
 
-**⚠ Production issue:** In Vercel serverless, each invocation may get a fresh instance. `jobStore` will be empty on cold starts, causing polling to return 404.
-
-**Fix:** Replace with [Upstash Redis](https://upstash.com):
+**Fix — Upstash Redis:**
 ```typescript
 import { Redis } from "@upstash/redis"
-const redis = new Redis({ url: process.env.UPSTASH_URL, token: process.env.UPSTASH_TOKEN })
-await redis.set(jobId, jobData, { ex: 3600 })
-```
-
----
-
-## n8n workflow nodes
-
-| Node | Type | Purpose |
-|---|---|---|
-| Webhook | `n8n-nodes-base.webhook` | Receives POST at `/storyforge-generate` |
-| Validate Input | `n8n-nodes-base.code` | JS validation of all fields |
-| Generate Mock Videos | `n8n-nodes-base.code` | Returns 5 placeholder video objects |
-| Respond to Webhook | `n8n-nodes-base.respondToWebhook` | Returns JSON + CORS headers |
-
-The n8n workflow receives the full payload including images. Currently it validates and returns mock videos. In v0.3 this node will trigger real video rendering.
-
----
-
-## OpenAI integration
-
-`/api/generate-videos-ai` uses the Vercel AI SDK:
-
-```typescript
-import { generateText } from "ai"
-
-const { text } = await generateText({
-  model: "openai/gpt-5-mini",  // ⚠ wrong — change to "gpt-4o-mini"
-  prompt: `Generate 2 video scripts for ${courseName}...`,
-  maxOutputTokens: 1500,
-  temperature: 0.8,
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 })
+
+// Write
+await redis.set(`job:${jobId}`, JSON.stringify(jobState), { ex: 3600 })
+
+// Read
+const job = await redis.get(`job:${jobId}`)
 ```
 
-The prompt asks for 2 scripts as a JSON array. The system fallback (`generateFallbackVideos`) activates if this call fails.
+---
 
-**Note:** Currently only 2 scripts are generated per AI call. The results screen shows up to 5 videos — the remaining 3 come from the fallback mock data in `storyforge-app.tsx`.
+## n8n workflow
+
+The `storyforge-workflow.json` defines a 4-node linear pipeline. In v0.1 it validates and logs the request. In v0.3 it will trigger the Creatomate render job.
+
+```
+Webhook → Validate Input → Generate Mock Videos → Respond to Webhook
+```
+
+**v0.3 target:**
+```
+Webhook → Validate Input → Trigger Creatomate Render → Poll Render Status → Respond with .mp4 URLs
+```
